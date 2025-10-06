@@ -1,8 +1,9 @@
-// script.js - Gunakan GET requests untuk menghindari CORS
+// script.js - Gunakan JSONP untuk bypass CORS
 
 class ScraperApp {
     constructor() {
         this.apiUrl = localStorage.getItem('scraperApiUrl') || '';
+        this.jsonpCallbackId = 0;
         this.init();
     }
 
@@ -50,7 +51,7 @@ class ScraperApp {
             }
         } catch (error) {
             console.log('Connection test failed:', error);
-            this.showNotification('❌ Koneksi API gagal: ' + error.message, 'error');
+            this.showNotification('❌ Koneksi API gagal', 'error');
         }
     }
 
@@ -105,18 +106,70 @@ class ScraperApp {
         }
     }
 
-    async callAppsScriptAPI(functionName, data) {
-        if (!this.apiUrl) {
-            throw new Error('API URL belum diatur');
-        }
+    callAppsScriptAPI(functionName, data) {
+        return new Promise((resolve, reject) => {
+            if (!this.apiUrl) {
+                reject(new Error('API URL belum diatur'));
+                return;
+            }
 
-        console.log('Calling API:', functionName, data);
+            console.log('Calling API:', functionName, data);
 
-        // Build URL dengan parameters
+            // Build URL dengan parameters
+            const url = new URL(this.apiUrl);
+            url.searchParams.set('function', functionName);
+            
+            // Add data parameters
+            Object.keys(data).forEach(key => {
+                if (typeof data[key] === 'object') {
+                    url.searchParams.set(key, JSON.stringify(data[key]));
+                } else {
+                    url.searchParams.set(key, data[key]);
+                }
+            });
+
+            // Add timestamp untuk avoid cache
+            url.searchParams.set('_t', Date.now());
+
+            console.log('Final URL:', url.toString());
+
+            // Coba fetch biasa dulu
+            fetch(url.toString())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(result => {
+                    if (result.error) {
+                        throw new Error(result.error);
+                    }
+                    resolve(result);
+                })
+                .catch(fetchError => {
+                    console.log('Fetch failed, trying JSONP:', fetchError);
+                    // Jika fetch gagal, coba JSONP
+                    this.callAppsScriptAPI_JSONP(functionName, data, resolve, reject);
+                });
+        });
+    }
+
+    callAppsScriptAPI_JSONP(functionName, data, resolve, reject) {
+        const callbackName = `jsonp_callback_${this.jsonpCallbackId++}`;
+        const timeoutId = setTimeout(() => {
+            reject(new Error('JSONP timeout'));
+            delete window[callbackName];
+            if (script.parentNode) {
+                script.parentNode.removeChild(script);
+            }
+        }, 30000);
+
+        // Build URL dengan callback parameter
         const url = new URL(this.apiUrl);
         url.searchParams.set('function', functionName);
+        url.searchParams.set('callback', callbackName);
         
-        // Add data parameters
         Object.keys(data).forEach(key => {
             if (typeof data[key] === 'object') {
                 url.searchParams.set(key, JSON.stringify(data[key]));
@@ -125,30 +178,29 @@ class ScraperApp {
             }
         });
 
-        // Add timestamp untuk avoid cache
-        url.searchParams.set('_t', Date.now());
+        window[callbackName] = (response) => {
+            clearTimeout(timeoutId);
+            delete window[callbackName];
+            if (script.parentNode) {
+                script.parentNode.removeChild(script);
+            }
+            
+            if (response.error) {
+                reject(new Error(response.error));
+            } else {
+                resolve(response);
+            }
+        };
 
-        console.log('Final URL:', url.toString());
-
-        const response = await fetch(url.toString(), {
-            method: 'GET',
-            // Tidak perlu headers untuk GET request sederhana
-        });
-
-        console.log('Response status:', response.status);
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        console.log('API Result:', result);
+        const script = document.createElement('script');
+        script.src = url.toString();
+        script.onerror = () => {
+            clearTimeout(timeoutId);
+            delete window[callbackName];
+            reject(new Error('JSONP script failed to load'));
+        };
         
-        if (result.error) {
-            throw new Error(result.error);
-        }
-
-        return result;
+        document.head.appendChild(script);
     }
 
     handleScrapingSuccess(result) {
@@ -193,21 +245,15 @@ class ScraperApp {
         
         let errorMessage = error.message || error.toString();
         
-        if (errorMessage.includes('Failed to fetch')) {
-            errorMessage = 'Gagal terhubung ke API. Pastikan: 1) API URL benar, 2) Apps Script sudah di-deploy, 3) Tidak ada pemblokiran';
-        } else if (errorMessage.includes('HTTP error')) {
-            errorMessage = `Error HTTP: ${errorMessage}`;
-        }
-        
         this.showResults(`
             <div class="result-item result-error">
                 <div class="result-title">❌ Terjadi Error</div>
                 <div><strong>Detail:</strong> ${this.escapeHtml(errorMessage)}</div>
                 <div class="result-meta">
-                    <strong>Pastikan:</strong><br>
-                    • URL Apps Script sudah di-deploy sebagai Web App<br>
-                    • Akses "Anyone" sudah dipilih<br>
-                    • Spreadsheet ID sudah di-set di kode
+                    <strong>Troubleshooting:</strong><br>
+                    • Pastikan URL Apps Script benar<br>
+                    • Deploy sebagai Web App dengan akses "Anyone"<br>
+                    • Ganti Spreadsheet ID di kode Apps Script
                 </div>
             </div>
         `);
