@@ -1,4 +1,4 @@
-// script.js - Perbaikan fetch dan error handling
+// script.js - Gunakan GET requests untuk menghindari CORS
 
 class ScraperApp {
     constructor() {
@@ -9,14 +9,15 @@ class ScraperApp {
     init() {
         this.bindEvents();
         this.loadConfig();
-        this.testConnection(); // Test connection on load
+        if (this.apiUrl) {
+            this.testConnection();
+        }
     }
 
     bindEvents() {
         document.getElementById('scrapingForm').addEventListener('submit', (e) => this.handleScrapingSubmit(e));
         document.getElementById('apiUrl').addEventListener('change', (e) => this.saveConfig());
         
-        // Enter key support
         document.getElementById('urlInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 this.handleScrapingSubmit(e);
@@ -36,7 +37,7 @@ class ScraperApp {
         this.apiUrl = apiUrlInput.value.trim();
         localStorage.setItem('scraperApiUrl', this.apiUrl);
         this.showNotification('Konfigurasi disimpan!', 'success');
-        this.testConnection(); // Test after saving
+        this.testConnection();
     }
 
     async testConnection() {
@@ -49,6 +50,7 @@ class ScraperApp {
             }
         } catch (error) {
             console.log('Connection test failed:', error);
+            this.showNotification('❌ Koneksi API gagal: ' + error.message, 'error');
         }
     }
 
@@ -66,7 +68,6 @@ class ScraperApp {
             return;
         }
 
-        // Validasi URL format
         if (!this.isValidUrl(url)) {
             this.showError('Format URL tidak valid. Pastikan URL dimulai dengan http:// atau https://');
             return;
@@ -95,9 +96,6 @@ class ScraperApp {
         this.hideResults();
 
         try {
-            // Test connection first
-            await this.testConnection();
-            
             const response = await this.callAppsScriptAPI('scrapeAndSave', { url, options });
             this.handleScrapingSuccess(response);
         } catch (error) {
@@ -114,17 +112,27 @@ class ScraperApp {
 
         console.log('Calling API:', functionName, data);
 
-        const response = await fetch(this.apiUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                function: functionName,
-                data: data
-            }),
-            // Timeout after 30 seconds
-            signal: AbortSignal.timeout(30000)
+        // Build URL dengan parameters
+        const url = new URL(this.apiUrl);
+        url.searchParams.set('function', functionName);
+        
+        // Add data parameters
+        Object.keys(data).forEach(key => {
+            if (typeof data[key] === 'object') {
+                url.searchParams.set(key, JSON.stringify(data[key]));
+            } else {
+                url.searchParams.set(key, data[key]);
+            }
+        });
+
+        // Add timestamp untuk avoid cache
+        url.searchParams.set('_t', Date.now());
+
+        console.log('Final URL:', url.toString());
+
+        const response = await fetch(url.toString(), {
+            method: 'GET',
+            // Tidak perlu headers untuk GET request sederhana
         });
 
         console.log('Response status:', response.status);
@@ -167,6 +175,9 @@ class ScraperApp {
                     </div>
                 </div>
             `);
+            
+            // Clear form setelah success
+            document.getElementById('urlInput').value = '';
         } else {
             this.showResults(`
                 <div class="result-item result-error">
@@ -182,13 +193,10 @@ class ScraperApp {
         
         let errorMessage = error.message || error.toString();
         
-        // Specific error messages
         if (errorMessage.includes('Failed to fetch')) {
-            errorMessage = 'Gagal terhubung ke API. Periksa: 1) API URL sudah benar, 2) Internet terhubung, 3) Tidak ada blocker CORS';
+            errorMessage = 'Gagal terhubung ke API. Pastikan: 1) API URL benar, 2) Apps Script sudah di-deploy, 3) Tidak ada pemblokiran';
         } else if (errorMessage.includes('HTTP error')) {
-            errorMessage = `Error HTTP: ${errorMessage}. Pastikan Apps Script sudah di-deploy sebagai Web App`;
-        } else if (errorMessage.includes('timeout')) {
-            errorMessage = 'Timeout: Request terlalu lama. Coba lagi nanti atau gunakan URL yang lebih sederhana';
+            errorMessage = `Error HTTP: ${errorMessage}`;
         }
         
         this.showResults(`
@@ -196,16 +204,15 @@ class ScraperApp {
                 <div class="result-title">❌ Terjadi Error</div>
                 <div><strong>Detail:</strong> ${this.escapeHtml(errorMessage)}</div>
                 <div class="result-meta">
-                    <strong>Troubleshooting:</strong><br>
-                    1. Pastikan API URL benar dari Apps Script<br>
-                    2. Deploy Apps Script dengan akses "Anyone"<br>
-                    3. Cek konsol browser (F12) untuk detail error
+                    <strong>Pastikan:</strong><br>
+                    • URL Apps Script sudah di-deploy sebagai Web App<br>
+                    • Akses "Anyone" sudah dipilih<br>
+                    • Spreadsheet ID sudah di-set di kode
                 </div>
             </div>
         `);
     }
 
-    // Utility function untuk escape HTML
     escapeHtml(unsafe) {
         if (typeof unsafe !== 'string') return unsafe;
         return unsafe
@@ -280,7 +287,7 @@ class ScraperApp {
     }
 }
 
-// Initialize app when DOM is loaded
+// Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     window.scraperApp = new ScraperApp();
 });
