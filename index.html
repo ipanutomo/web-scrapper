@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Scraper App</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Web Scraper</h1>
+            <p>Scrape data dari website dan simpan ke Google Sheets</p>
+        </header>
+
+        <!-- Scraping Form -->
+        <div class="card">
+            <h2>Scrape Website Baru</h2>
+            <form id="scrapingForm">
+                <div class="form-group">
+                    <label for="urlInput">URL Website:</label>
+                    <input type="url" id="urlInput" placeholder="https://example.com" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Data yang ingin di-scrape:</label>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" name="extractTitle" checked> Judul Website</label>
+                        <label><input type="checkbox" name="extractMeta"> Meta Description</label>
+                        <label><input type="checkbox" name="extractLinks"> Link Eksternal</label>
+                    </div>
+                </div>
+                
+                <button type="submit" id="scrapeButton">
+                    <span class="button-text">Mulai Scraping</span>
+                    <div class="spinner"></div>
+                </button>
+            </form>
+        </div>
+
+        <!-- Results Section -->
+        <div class="card" id="resultsCard" style="display: none;">
+            <h2>Hasil Scraping</h2>
+            <div id="resultsContent"></div>
+        </div>
+
+        <!-- Config Section -->
+        <div class="card">
+            <h2>⚙️ Konfigurasi API</h2>
+            <div class="form-group">
+                <label for="apiUrl">Google Apps Script API URL:</label>
+                <input type="url" id="apiUrl" placeholder="https://script.google.com/macros/s/.../exec">
+                <small>Dapatkan URL ini dari Google Apps Script deployment</small>
+            </div>
+            <button onclick="saveConfig()">Simpan Konfigurasi</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
